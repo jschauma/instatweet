@@ -16,7 +16,7 @@ use LWP::UserAgent;
 $ENV{'PATH'} = "/home/jschauma/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/pkg/bin:/usr/pkg/sbin";
 $ENV{'CDPATH'} = "";
 $ENV{'ENV'} = "";
-$ENV{'HOME'} = "/home/jschauma";
+$ENV{'HOME'} = "/tmp";
 
 ###
 ### Constants
