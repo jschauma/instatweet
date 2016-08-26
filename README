@@ -1,0 +1,43 @@
+Summary
+-------
+Posting Instagram pictures to Twitter is a bit of a
+pain, since instagram links do not get a Twitter image
+card, requiring the user to follow the link.
+
+'instatweet' allows you to periodically poll an
+instagram account and have it post new images to a
+Twitter account.  That way, you can follow an
+instagram account without having to have or use an
+instagram account and without having to follow
+individual links.
+
+If the -f flag is given, then 'instatweet' will log
+the picture ID in the given file and only tweet images
+that are not included in that file.
+
+'instatweet' uses the tweet(1) command-line utility to
+post the picture.  This requires you to have set up
+tweet(1) for the given account prior to using
+'instatweet'.
+
+Please see the manual page for details.
+https://github.com/jschauma/instatweet/blob/master/doc/instatweet.1.txt
+
+Example
+-------
+I have a crontab entry that cross-posts cartoons from
+the New Yorker Instagram account to a Twitter account
+I control:
+
+30 */2 * * * instatweet -f /home/jschauma/.instatweet -i newyorkercartoons -t nycartoons
+
+Requirements
+------------
+https://github.com/jschauma/tweet
+
+Perl, LWP::UserAgent, LWP::Protocol::https, JSON
+
+Feedback
+--------
+jschauma@netmeister.org
+https://twitter.com/jschauma

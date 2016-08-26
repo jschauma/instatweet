@@ -1,0 +1,76 @@
+.\"
+.Dd August 26, 2016
+.Dt instatweet 1
+.Os
+.Sh NAME
+.Nm instatweet
+.Nd tweet images from an instagram account
+.Sh SYNOPSIS
+.Nm
+.Op Fl dhv
+.Fl f Ar seen
+.Fl i Ar instagram
+.Fl t Ar twitter
+.Sh DESCRIPTION
+.Nm
+will fetch the latest image from the given instagram
+account and post it on Twitter.
+.Sh OPTIONS
+The following options are supported by
+.Nm :
+.Bl -tag -width i_instagram_
+.It Fl d
+Don't do anything, just show what would be done.
+.It Fl f Ar seen
+Log the pictures to the file 'seen'; only tweet
+pictures not in that file.
+.It Fl h
+Display help and exit.
+.It Fl i Ar instagram
+Fetch the latest image from this instagram account.
+.It Fl t Ar twitter
+Post the image to this twitter account.
+.It Fl v
+Be verbose.
+Can be specified multiple times.
+.El
+.Sh DETAILS
+Posting Instagram pictures to Twitter is a bit of a
+pain, since instagram links do not get a Twitter image
+card, requiring the user to follow the link.
+.Pp
+.Nm
+allows you to periodically poll an instagram account
+and have it post new images to a Twitter account.
+That way, you can follow an instagram account without
+having to have or use an instagram account and without
+having to follow individual links.
+.Pp
+If the
+.Fl f
+flag is given, then
+.Nm
+will log the picture ID in the given file and only
+tweet images that are not included in that file.
+.Pp
+.Nm
+uses the
+.Xr tweet 1
+command-line utility to post the picture.
+This requires you to have set up
+.Xr tweet 1
+for the given account prior to using
+.Nm .
+.Sh EXIT STATUS
+.Ex -std 
+.Sh SEE ALSO
+.Xr tweet 1
+.Sh HISTORY
+.Nm
+was originally written by
+.An Jan Schaumann
+.Aq jschauma@netmeister.org
+in August 2016.
+.Sh BUGS
+Please submit bug reports and feature requests by
+emailing the author.
