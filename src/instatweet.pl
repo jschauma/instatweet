@@ -22,9 +22,6 @@ $ENV{'HOME'} = "/tmp";
 ### Constants
 ###
 
-use constant TRUE => 1;
-use constant FALSE => 0;
-
 use constant EXIT_FAILURE => 1;
 use constant EXIT_SUCCESS => 0;
 
@@ -135,71 +132,60 @@ sub fetchMedia($) {
 sub getContent($) {
 	my ($url) = @_;
 
+	$ENV{HTTPS_DEBUG} = 1;
 	my $ua = LWP::UserAgent->new();
+	$ua->ssl_opts("SSL_ca_file" => "/etc/openssl/cert.pem");
+	$ua->agent("");
 	my $response = $ua->get($url);
-
 	if (!$response->is_success) {
 		error("Unable to fetch $url: " . $response->status_line, EXIT_FAILURE);
 		# NOTREACHED
 	}
-
 	return split(/\n/, $response->content);
 }
 
 sub getLatestPic() {
 	verbose("Fetching latest image for instagram account '" . $CONFIG{'i'} . "'...");
 
-	my $url = "https://www.instagram.com/" . $CONFIG{'i'} . "/";
+	my $url = "https://www.picuki.com/profile/" . $CONFIG{'i'};
 
 	foreach my $line (getContent($url)) {
-		if ($line =~ m/javascript">window._sharedData = (.*);<\/script>/) {
-			my $jdata;
-		        my $json = new JSON;
-			eval {
-				$jdata = $json->allow_nonref->utf8->relaxed->decode($1);
-			};
-			if ($@) {
-				error("Unable to parse json:\n" . $@, EXIT_FAILURE);
-				# NOTREACHED
-			}
+		if ($line =~ m|<a href="https://www.picuki.com/media/(.*)">|) {
+			my $media = $1;
+			$CODE = mediaToCode($media);
+			next;
+		}
 
-			if (!$jdata->{entry_data}) {
-				last;
-			}
-
-			my $latest = @{@{$jdata->{entry_data}->{ProfilePage}}[0]->{user}->{media}->{nodes}}[0];
-			my $file = $latest->{thumbnail_src};
-
-			if (!$file) {
-				$file = $latest->{display_src};
-			}
-
-			if (!$file) {
-				error("Unable to find a source file at $url.", EXIT_FAILURE);
-				# NOTREACHED
-			}
-
-			$CAPTION = $latest->{caption};
-
-			if ($CAPTION) {
-				$CAPTION =~ s/\n/ /g;
-			}
-
-			$CODE = $latest->{code};
-			if ($CODE =~ m/^([a-zA-Z0-9_-]+)$/) {
-				$CODE = $1;
-			} else {
-				error("Unsafe image code: $CODE.", EXIT_FAILURE);
-				# NOTREACHED
-			}
+		if ($line =~ m/<img class="post-image" src="(.*)" alt="(.*)">/) {
+			my $file = $1;
+			$CAPTION = $2;
 			$LINK = "https://www.instagram.com/p/$CODE/";
-
 			fetchMedia($file);
-
 			last;
 		}
 	}
+
+	if (!$CODE) {
+		error("Unable to get data from instagram.", EXIT_FAILURE);
+		# NOTREACHED
+	}
 }
+
+sub mediaToCode($) {
+	my ($id) = @_;
+	my $code  = "";
+	my @alphabet = split("", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
+
+	my $n = int($id);
+	while ($n > 0) {
+		my $r = $n % 64;
+		$n = int(($n - $r) / 64);
+		$code = $alphabet[$r] . $code;
+	}
+
+	return $code;
+}
+
 
 sub runCommand($) {
 	my ($cmd) = @_;
@@ -214,8 +200,12 @@ sub runCommand($) {
 sub tweetPic() {
 	verbose("Tweeting picture...");
 
-	if (length($CAPTION) > 89) {
+	if ($CAPTION && (length($CAPTION) > 89)) {
 		$CAPTION = substr($CAPTION, 0, 86) . "...";
+	}
+
+	if (!$CAPTION) {
+		$CAPTION = "";
 	}
 
 	my $seen = checkSeen();
@@ -226,8 +216,11 @@ sub tweetPic() {
 	}
 
 	my @cmd = ( "tweet", "-u", $CONFIG{'t'}, "-m", $TMPFILE );
+	binmode(STDOUT, ":utf8");
+	binmode(STDERR, ":utf8");
 	verbose("'$CAPTION $LINK' | " . join(" ", @cmd), 2);
 	open(PIPE, "|-", @cmd) || die "Unable to open pipe to 'tweet': $!\n";
+	binmode(PIPE, ":utf8");
 	print PIPE "$CAPTION $LINK";
 	close(PIPE);
 
