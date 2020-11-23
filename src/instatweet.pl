@@ -16,7 +16,7 @@ use LWP::UserAgent;
 $ENV{'PATH'} = "/home/jschauma/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/pkg/bin:/usr/pkg/sbin";
 $ENV{'CDPATH'} = "";
 $ENV{'ENV'} = "";
-$ENV{'HOME'} = "/tmp";
+$ENV{'HOME'} = "/home/jschauma";
 
 ###
 ### Constants
@@ -147,18 +147,50 @@ sub getContent($) {
 sub getLatestPic() {
 	verbose("Fetching latest image for instagram account '" . $CONFIG{'i'} . "'...");
 
-	my $url = "https://www.picuki.com/profile/" . $CONFIG{'i'};
+ 	my $url = "https://www.instagram.com/" . $CONFIG{'i'} . "/";
 
 	foreach my $line (getContent($url)) {
-		if ($line =~ m|<a href="https://www.picuki.com/media/(.*)">|) {
-			my $media = $1;
-			$CODE = mediaToCode($media);
-			next;
-		}
+		if ($line =~ m/javascript">window._sharedData = (.*);<\/script>/) {
+			my $jdata;
+		        my $json = new JSON;
+			eval {
+				$jdata = $json->allow_nonref->utf8->relaxed->decode($1);
+			};
+			if ($@) {
+				error("Unable to parse json:\n" . $@, EXIT_FAILURE);
+				# NOTREACHED
+			}
 
-		if ($line =~ m/<img class="post-image" src="(.*)" alt="(.*)">/) {
-			my $file = $1;
-			$CAPTION = $2;
+			if (!$jdata->{entry_data}) {
+				last;
+			}
+
+			my $node= @{@{$jdata->{entry_data}->{ProfilePage}}[0]->{graphql}->{user}->{edge_owner_to_timeline_media}->{edges}}[0]->{node};
+
+			my $file = $node->{thumbnail_src};
+
+			if (!$file) {
+				$file = $node->{display_url};
+			}
+
+			if (!$file) {
+				error("Unable to find a source file at $url.", EXIT_FAILURE);
+				# NOTREACHED
+			}
+
+			$CAPTION = $node->{edge_media_to_caption}->{edges}[0]->{node}->{text};
+
+			if ($CAPTION) {
+				$CAPTION =~ s/\n/ /g;
+			}
+
+			$CODE = $node->{shortcode};
+			if ($CODE =~ m/^([a-zA-Z0-9_-]+)$/) {
+				$CODE = $1;
+			} else {
+				error("Unsafe image code: $CODE.", EXIT_FAILURE);
+				# NOTREACHED
+			}
 			$LINK = "https://www.instagram.com/p/$CODE/";
 			fetchMedia($file);
 			last;
@@ -170,22 +202,6 @@ sub getLatestPic() {
 		# NOTREACHED
 	}
 }
-
-sub mediaToCode($) {
-	my ($id) = @_;
-	my $code  = "";
-	my @alphabet = split("", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
-
-	my $n = int($id);
-	while ($n > 0) {
-		my $r = $n % 64;
-		$n = int(($n - $r) / 64);
-		$code = $alphabet[$r] . $code;
-	}
-
-	return $code;
-}
-
 
 sub runCommand($) {
 	my ($cmd) = @_;
@@ -211,7 +227,7 @@ sub tweetPic() {
 	my $seen = checkSeen();
 
 	if ($CONFIG{'f'} && $seen) {
-		verbose("Already tweeted picture '$CODE'.");
+		verbose("Already tweeted picture '$CODE' with caption '$CAPTION'.");
 		return;
 	}
 
