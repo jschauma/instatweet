@@ -1,5 +1,5 @@
 .\"
-.Dd August 26, 2016
+.Dd December 08, 2020
 .Dt instatweet 1
 .Os
 .Sh NAME
@@ -8,6 +8,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl dhv
+.Op Fl T Ar tumblr
 .Fl f Ar seen
 .Fl i Ar instagram
 .Fl t Ar twitter
@@ -19,6 +20,8 @@ account and post it on Twitter.
 The following options are supported by
 .Nm :
 .Bl -tag -width i_instagram_
+.It Fl T Ar tumblr
+Fetch images from this tumblr blog.
 .It Fl d
 Don't do anything, just show what would be done.
 .It Fl f Ar seen

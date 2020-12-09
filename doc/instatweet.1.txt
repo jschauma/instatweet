@@ -4,7 +4,7 @@ NAME
      instatweet -- tweet images from an instagram account
 
 SYNOPSIS
-     instatweet [-dhv] -f seen -i instagram -t twitter
+     instatweet [-dhv] [-T tumblr] -f seen -i instagram -t twitter
 
 DESCRIPTION
      instatweet will fetch the latest image from the given instagram account
@@ -12,6 +12,8 @@ DESCRIPTION
 
 OPTIONS
      The following options are supported by instatweet:
+
+     -T tumblr	   Fetch images from this tumblr blog.
 
      -d		   Don't do anything, just show what would be done.
 
@@ -56,4 +58,4 @@ HISTORY
 BUGS
      Please submit bug reports and feature requests by emailing the author.
 
-NetBSD 7.0			August 26, 2016			    NetBSD 7.0
+NetBSD 8.0		       December 08, 2020		    NetBSD 8.0

@@ -11,6 +11,14 @@ instagram account without having to have or use an
 instagram account and without having to follow
 individual links.
 
+Since Instagram may require you to have a developer
+API account with Facebook and kick you back to a login
+screen, 'instatweet' will fall back to using
+picuki.net to grab the image.
+
+'instatweet' also supports pulling an image from
+Tumblr posts.
+
 If the -f flag is given, then 'instatweet' will log
 the picture ID in the given file and only tweet images
 that are not included in that file.

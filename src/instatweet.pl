@@ -6,6 +6,7 @@
 use strict;
 use warnings;
 
+use Digest::MD5 qw(md5_hex);
 use File::Basename;
 use File::Temp;
 use Getopt::Long;
@@ -66,6 +67,15 @@ sub error($$) {
 	#NOTREACHED
 }
 
+sub getMD5() {
+	verbose("Calculating md5 of $TMPFILE...");
+	my $fh;
+	open($fh, '<', $TMPFILE) or die "Unable to open $TMPFILE: $!\n";
+	$CODE = Digest::MD5->new->addfile($fh)->hexdigest;
+	close($fh);
+	verbose("MD5($TMPFILE): $CODE", 2);
+}
+
 sub init() {
 	my ($ok);
 
@@ -79,6 +89,7 @@ sub init() {
 			 "file|f=s"      => \$CONFIG{'f'},
 			 "help|h"        => \$CONFIG{'h'},
 			 "instagram|i=s" => \$CONFIG{'i'},
+			 "tumblr|T=s"    => \$CONFIG{'T'},
 			 "twitter|t=s"   => \$CONFIG{'t'},
 			 "verbose|v+"    => sub { $CONFIG{'v'}++; },
 			 );
@@ -94,13 +105,19 @@ sub init() {
 		# NOTREACHED
 	}
 
-	if (!$CONFIG{'i'} || !$CONFIG{'t'}) {
-		error("Please specify both '-i' and '-t'.", EXIT_FAILURE);
+	if (!($CONFIG{'i'} || $CONFIG{'T'})|| !$CONFIG{'t'}) {
+		error("Please specify both '-t' and either '-i' or '-T'.", EXIT_FAILURE);
 		# NOTREACHED
 	}
 
-	if ($CONFIG{'i'} =~ m/^([a-z0-9]+)$/) {
-		$CONFIG{'i'} = $1;
+	if ($CONFIG{'i'}) {
+		if ($CONFIG{'i'} =~ m/^([a-z0-9]+)$/) {
+			$CONFIG{'i'} = $1;
+		}
+	} elsif ($CONFIG{'T'}) {
+		if ($CONFIG{'T'} =~ m/^([a-z0-9]+)$/) {
+			$CONFIG{'T'} = $1;
+		}
 	} else {
 		error("Invalid instagram account name.", EXIT_FAILURE);
 		# NOTREACHED
@@ -145,9 +162,54 @@ sub getContent($) {
 }
 
 sub getLatestPic() {
-	verbose("Fetching latest image for instagram account '" . $CONFIG{'i'} . "'...");
 
- 	my $url = "https://www.instagram.com/" . $CONFIG{'i'} . "/";
+	if ($CONFIG{'T'}) {
+		verbose("Fetching latest image for Tumblr account '" . $CONFIG{'T'} . "'...");
+		tryTumblr();
+	} else {
+		verbose("Fetching latest image for instagram account '" . $CONFIG{'i'} . "'...");
+		tryInstagram();
+
+		if (!$LINK) {
+			tryPicuki();
+		}
+	}
+
+	if (!$LINK) {
+		error("Unable to get data.", EXIT_FAILURE);
+		# NOTREACHED
+	}
+}
+
+sub mediaToCode($) {
+	my ($id) = @_;
+	my $code  = "";
+	my @alphabet = split("", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
+
+	my $n = int($id);
+	while ($n > 0) {
+		my $r = $n % 64;
+		$n = int(($n - $r) / 64);
+		$code = $alphabet[$r] . $code;
+	}
+
+	return $code;
+}
+
+sub runCommand($) {
+	my ($cmd) = @_;
+	verbose("Running '$cmd'...", 2);
+	if ($CONFIG{'d'}) {
+		print "$cmd\n";
+	} else {
+		system($cmd);
+	}
+}
+
+sub tryInstagram() {
+	verbose("Trying instagram...", 2);
+
+ 	my $url = "https://www.instagram.com/" . $CONFIG{'i'} . "/?__a=1";
 
 	foreach my $line (getContent($url)) {
 		if ($line =~ m/javascript">window._sharedData = (.*);<\/script>/) {
@@ -162,6 +224,11 @@ sub getLatestPic() {
 			}
 
 			if (!$jdata->{entry_data}) {
+				last;
+			}
+
+			if ($jdata->{entry_data}->{LoginAndSignupPage}) {
+				#print STDERR "Instagram redirects to login page.\n";
 				last;
 			}
 
@@ -196,22 +263,63 @@ sub getLatestPic() {
 			last;
 		}
 	}
+}
 
-	if (!$CODE) {
-		error("Unable to get data from instagram.", EXIT_FAILURE);
-		# NOTREACHED
+sub tryPicuki() {
+	verbose("Trying picuki...", 2);
+
+ 	my $url = "https://www.picuki.com/profile/" . $CONFIG{'i'};
+
+	foreach my $line (getContent($url)) {
+		if ($line =~ m|<a href="https://www.picuki.com/media/(.*)">|) {
+			my $media = $1;
+			$CODE = mediaToCode($media);
+			next;
+		}
+
+		if ($line =~ m/<img class="post-image" src="(.*)" alt="(.*)">/) {
+			my $file = $1;
+			$CAPTION = $2;
+			if ($CODE) {
+				$LINK = "https://www.instagram.com/p/$CODE/";
+			} else {
+				$LINK = "https://www.instagram.com/newyorkercartoons/";
+			}
+			fetchMedia($file);
+			last;
+		}
+	}
+
+	if (!$CODE && $TMPFILE) {
+		getMD5();
 	}
 }
 
-sub runCommand($) {
-	my ($cmd) = @_;
-	verbose("Running '$cmd'...", 2);
-	if ($CONFIG{'d'}) {
-		print "$cmd\n";
-	} else {
-		system($cmd);
+sub tryTumblr() {
+	verbose("Trying tumblr...", 2);
+
+	my $url = "https://" . $CONFIG{'T'} . ".tumblr.com";
+
+	my $item = 0;
+	my $post = "";
+	foreach my $line (getContent($url . "/rss")) {
+		if ($line =~ m|<item>.*?<link>($url/post/(.*?))</link>|) {
+			$post = $1;
+			$CODE = $2;
+			last;
+		}
+	}
+	if ($post) {
+		foreach my $line (getContent($post)) {
+			if ($line =~ m|<a href="$url/image/.*?"><img src="(.*?)"|) {
+				$LINK = $post;
+				fetchMedia($1);
+				last;
+			}
+		}
 	}
 }
+
 
 sub tweetPic() {
 	verbose("Tweeting picture...");
@@ -252,7 +360,8 @@ sub usage($) {
 	my $FH = $err ? \*STDERR : \*STDOUT;
 
 	print $FH <<EOH
-Usage: $PROGNAME [-dhv] -i instagram -t twitter
+Usage: $PROGNAME [-dhv] [-T tumblr] [-i instagram] -t twitter
+         -T tumblr     fetch photos from the 'tumblr' account
          -d            don't do anything, just show what would be done
 	 -h            print this help and exit
          -i instagram  fetch photos from the 'instagram' account
