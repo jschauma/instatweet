@@ -1,5 +1,5 @@
 .\"
-.Dd December 08, 2020
+.Dd November 29, 2022
 .Dt instatweet 1
 .Os
 .Sh NAME
@@ -8,6 +8,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl dhv
+.Op Fl M Ar mastodon
 .Op Fl T Ar tumblr
 .Fl f Ar seen
 .Fl i Ar instagram
@@ -20,6 +21,10 @@ account and post it on Twitter.
 The following options are supported by
 .Nm :
 .Bl -tag -width i_instagram_
+.It Fl M Ar mastodon
+Also post to this Mastodon server.
+Note: this requires the authentication token for that
+server to be stored in the file ~/.bearer.
 .It Fl T Ar tumblr
 Fetch images from this tumblr blog.
 .It Fl d

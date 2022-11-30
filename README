@@ -19,6 +19,10 @@ picuki.net to grab the image.
 'instatweet' also supports pulling an image from
 Tumblr posts.
 
+In addition, 'instatweet' can also post images to a
+given Mastodon server; for that, the authenticating
+token needs to be stored in the file ~/.bearer.
+
 If the -f flag is given, then 'instatweet' will log
 the picture ID in the given file and only tweet images
 that are not included in that file.
@@ -34,10 +38,10 @@ https://github.com/jschauma/instatweet/blob/master/doc/instatweet.1.txt
 Example
 -------
 I have a crontab entry that cross-posts cartoons from
-the New Yorker Instagram account to a Twitter account
-I control:
+the New Yorker Instagram account to a Twitter and
+Mastodon account I control:
 
-30 */2 * * * instatweet -f /home/jschauma/.instatweet -i newyorkercartoons -t nycartoons
+30 */2 * * * instatweet -f /home/jschauma/.instatweet -i newyorkercartoons -t nycartoons -M mstdn.social
 
 Requirements
 ------------

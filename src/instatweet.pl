@@ -7,12 +7,15 @@ use strict;
 use warnings;
 
 use Digest::MD5 qw(md5_hex);
+use Encode qw(encode_utf8);
 use File::Basename;
 use File::Temp;
 use Getopt::Long;
 Getopt::Long::Configure("bundling");
 use JSON;
 use LWP::UserAgent;
+use LWP::Protocol::http;
+use Socket;
 
 $ENV{'PATH'} = "/home/jschauma/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/pkg/bin:/usr/pkg/sbin";
 $ENV{'CDPATH'} = "";
@@ -34,7 +37,7 @@ my %CONFIG;
 my $PROGNAME = basename($0);
 my ($TMPDIR, $TMPFILE);
 
-my ($CAPTION, $CODE, $LINK);
+my ($BEARER, $CAPTION, $CODE, $LINK, $SEEN);
 
 ###
 ### Subroutines
@@ -67,6 +70,41 @@ sub error($$) {
 	#NOTREACHED
 }
 
+sub getBearerToken() {
+	verbose("Getting bearer token...", 2);
+
+	my $bearerfile = $ENV{'HOME'} . "/.bearer";
+	my $fh;
+	open($fh, '<', $bearerfile) or die "Unable to open $bearerfile: $!\n";
+	$BEARER = <$fh>;
+	chomp($BEARER);
+	close($fh);
+}
+
+sub getIdFromJson($) {
+	verbose("Getting ID from JSON result...", 3);
+
+	my ($r) = @_;
+
+	my ($jdata, $node);
+	my $json = new JSON;
+
+	eval {
+		$jdata = $json->allow_nonref->utf8->relaxed->decode($r->decoded_content);
+	};
+	if ($@) {
+		error("Unable to parse json:\n" . $@, EXIT_FAILURE);
+		# NOTREACHED
+	}
+
+	if (!$jdata->{id}) {
+		error("Unable to get ID from Mastodon API response.\n", EXIT_FAILURE);
+		# NOTREACHED
+	}
+
+	return $jdata->{id};
+}
+
 sub getMD5() {
 	verbose("Calculating md5 of $TMPFILE...");
 	my $fh;
@@ -89,6 +127,7 @@ sub init() {
 			 "file|f=s"      => \$CONFIG{'f'},
 			 "help|h"        => \$CONFIG{'h'},
 			 "instagram|i=s" => \$CONFIG{'i'},
+			 "mastodon|M=s"  => \$CONFIG{'m'},
 			 "tumblr|T=s"    => \$CONFIG{'T'},
 			 "twitter|t=s"   => \$CONFIG{'t'},
 			 "verbose|v+"    => sub { $CONFIG{'v'}++; },
@@ -151,8 +190,16 @@ sub getContent($) {
 
 	$ENV{HTTPS_DEBUG} = 1;
 	my $ua = LWP::UserAgent->new();
+
+#	my $hostname = `/bin/hostname`;
+#	chomp($hostname);
+#	if ($hostname =~ m/(.*)/) {
+#		$hostname = $1;
+#	}
+#	my $ip4 = inet_ntoa(scalar(gethostbyname($hostname)));
+#	local @LWP::Protocol::http::EXTRA_SOCK_OPTS = ( LocalAddr => $ip4 );
 	$ua->ssl_opts("SSL_ca_file" => "/etc/openssl/cert.pem");
-	$ua->agent("");
+	$ua->agent("Mozilla/5.0 (iPhone; CPU iPhone OS 14_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Mobile/15E148 Safari/604.1");
 	my $response = $ua->get($url);
 	if (!$response->is_success) {
 		error("Unable to fetch $url: " . $response->status_line, EXIT_FAILURE);
@@ -196,6 +243,64 @@ sub mediaToCode($) {
 	return $code;
 }
 
+sub normalize($) {
+	my ($text) = @_;
+
+	$text =~ s/\xe2\x80\x91/-/g;
+	$text =~ s/\xe2\x80\x92/-/g;
+	$text =~ s/\xe2\x80\x93/-/g;
+	$text =~ s/\xe2\x80\x94/-/g;
+	$text =~ s/\xe2\x80\x95/-/g;
+
+	$text =~ s/\xe2\x80\x98/'/g;
+	$text =~ s/\xe2\x80\x99/'/g;
+	$text =~ s/\xe2\x80\x9a/'/g;
+	$text =~ s/\xe2\x80\x9b/'/g;
+	$text =~ s/\xe2\x80\xb2/'/g;
+	$text =~ s/\xe2\x80\xb5/'/g;
+
+	$text =~ s/\xe2\x80\x9c/"/g;
+	$text =~ s/\xe2\x80\x9d/"/g;
+	$text =~ s/\xe2\x80\x9e/"/g;
+	$text =~ s/\xe2\x80\x9f/"/g;
+	$text =~ s/\xe2\x80\xb3/"/g;
+	$text =~ s/\xe2\x80\xb4/"/g;
+	$text =~ s/\xe2\x80\xb6/"/g;
+
+	$text =~ s/\xe2\x80\xa6/.../g;
+
+	return $text;
+}
+
+sub postToMastodon() {
+	my $server = $CONFIG{'m'};
+
+	verbose("Posting to Mastodon server $server ...");
+	getBearerToken();
+
+	verbose("Posting media...", 2);
+	my $url = "$server/api/v1/media";
+	my $ua = LWP::UserAgent->new();
+	my %headers = (
+			'Authorization' => "Bearer $BEARER",
+			'Content-Type'  => "form-data",
+		      );
+	my $r = $ua->post($url, %headers, Content => [
+						file => [$TMPFILE],
+					]);
+
+	my $id = getIdFromJson($r);
+
+	verbose("Posting status with media $id...", 2);
+	$url = "$server/api/v1/statuses";
+	$r = $ua->post($url, %headers, Content => [
+						"media_ids[]" => $id,
+						status        => encode_utf8("$CAPTION\n\n$LINK"),
+					]);
+	$id = getIdFromJson($r);
+	verbose("Mastodon status $id posted.", 3);
+}
+
 sub runCommand($) {
 	my ($cmd) = @_;
 	verbose("Running '$cmd'...", 2);
@@ -211,58 +316,73 @@ sub tryInstagram() {
 
  	my $url = "https://www.instagram.com/" . $CONFIG{'i'} . "/?__a=1";
 
+	my $data;
+
 	foreach my $line (getContent($url)) {
 		if ($line =~ m/javascript">window._sharedData = (.*);<\/script>/) {
-			my $jdata;
-		        my $json = new JSON;
-			eval {
-				$jdata = $json->allow_nonref->utf8->relaxed->decode($1);
-			};
-			if ($@) {
-				error("Unable to parse json:\n" . $@, EXIT_FAILURE);
-				# NOTREACHED
-			}
-
-			if (!$jdata->{entry_data}) {
-				last;
-			}
-
-			if ($jdata->{entry_data}->{LoginAndSignupPage}) {
-				#print STDERR "Instagram redirects to login page.\n";
-				last;
-			}
-
-			my $node= @{@{$jdata->{entry_data}->{ProfilePage}}[0]->{graphql}->{user}->{edge_owner_to_timeline_media}->{edges}}[0]->{node};
-
-			my $file = $node->{thumbnail_src};
-
-			if (!$file) {
-				$file = $node->{display_url};
-			}
-
-			if (!$file) {
-				error("Unable to find a source file at $url.", EXIT_FAILURE);
-				# NOTREACHED
-			}
-
-			$CAPTION = $node->{edge_media_to_caption}->{edges}[0]->{node}->{text};
-
-			if ($CAPTION) {
-				$CAPTION =~ s/\n/ /g;
-			}
-
-			$CODE = $node->{shortcode};
-			if ($CODE =~ m/^([a-zA-Z0-9_-]+)$/) {
-				$CODE = $1;
-			} else {
-				error("Unsafe image code: $CODE.", EXIT_FAILURE);
-				# NOTREACHED
-			}
-			$LINK = "https://www.instagram.com/p/$CODE/";
-			fetchMedia($file);
+			$data = $1;
+			last;
+		} elsif ($line =~ m/^{/) {
+			$data = $line;
 			last;
 		}
 	}
+
+	if (!$data) {
+		print STDERR "Unable to get data from $url.\n";
+		return;
+	}
+
+	my ($jdata, $node);
+	my $json = new JSON;
+
+	eval {
+		$jdata = $json->allow_nonref->utf8->relaxed->decode($data);
+	};
+	if ($@) {
+		error("Unable to parse json:\n" . $@, EXIT_FAILURE);
+		# NOTREACHED
+	}
+
+	if ($jdata->{entry_data}) {
+		if ($jdata->{entry_data}->{LoginAndSignupPage}) {
+			#print STDERR "Instagram redirects to login page.\n";
+			return;
+		}
+		$node = @{@{$jdata->{entry_data}->{ProfilePage}}[0]->{graphql}->{user}->{edge_owner_to_timeline_media}->{edges}}[0]->{node};
+	} elsif ($jdata->{graphql}) {
+		$node = @{$jdata->{graphql}->{user}->{edge_owner_to_timeline_media}->{edges}}[0]->{node};
+	}
+
+	if (!$node) {
+		print STDERR "Unable to extract node info.\n";
+		use Data::Dumper;
+		print Data::Dumper::Dumper $jdata;
+		return;
+	}
+
+	my $file = $node->{display_url};
+
+	if (!$file) {
+		error("Unable to find a source file at $url.", EXIT_FAILURE);
+		# NOTREACHED
+	}
+
+	$CAPTION = $node->{edge_media_to_caption}->{edges}[0]->{node}->{text};
+
+	if ($CAPTION) {
+		$CAPTION =~ s/\n/ /g;
+	}
+
+	$CODE = $node->{shortcode};
+	if ($CODE =~ m/^([a-zA-Z0-9_-]+)$/) {
+		$CODE = $1;
+	} else {
+		error("Unsafe image code: $CODE.", EXIT_FAILURE);
+		# NOTREACHED
+	}
+	$LINK = "https://www.instagram.com/p/$CODE/";
+	fetchMedia($file);
 }
 
 sub tryPicuki() {
@@ -279,6 +399,10 @@ sub tryPicuki() {
 
 		if ($line =~ m/<img class="post-image" src="(.*)" alt="(.*)">/) {
 			my $file = $1;
+
+			if ($file !~ m|^https:|) {
+				$file = "https://www.picuki.com/$1";
+			}
 			$CAPTION = $2;
 			if ($CODE) {
 				$LINK = "https://www.instagram.com/p/$CODE/";
@@ -293,6 +417,7 @@ sub tryPicuki() {
 	if (!$CODE && $TMPFILE) {
 		getMD5();
 	}
+
 }
 
 sub tryTumblr() {
@@ -300,22 +425,12 @@ sub tryTumblr() {
 
 	my $url = "https://" . $CONFIG{'T'} . ".tumblr.com";
 
-	my $item = 0;
-	my $post = "";
 	foreach my $line (getContent($url . "/rss")) {
-		if ($line =~ m|<item>.*?<link>($url/post/(.*?))</link>|) {
-			$post = $1;
-			$CODE = $2;
+		if ($line =~ m|<description>&lt;img src="(.*?)"/&gt;.*?<link>($url/post/(.*?))</link>|) {
+			fetchMedia($1);
+			$LINK = $2;
+			$CODE = $3;
 			last;
-		}
-	}
-	if ($post) {
-		foreach my $line (getContent($post)) {
-			if ($line =~ m|<a href="$url/image/.*?"><img src="(.*?)"|) {
-				$LINK = $post;
-				fetchMedia($1);
-				last;
-			}
 		}
 	}
 }
@@ -324,24 +439,26 @@ sub tryTumblr() {
 sub tweetPic() {
 	verbose("Tweeting picture...");
 
-	if ($CAPTION && (length($CAPTION) > 89)) {
-		$CAPTION = substr($CAPTION, 0, 86) . "...";
+	if ($CAPTION && (length($CAPTION) > 240)) {
+		$CAPTION = substr($CAPTION, 0, 237) . "...";
 	}
 
 	if (!$CAPTION) {
 		$CAPTION = "";
 	}
 
-	my $seen = checkSeen();
+	$SEEN = checkSeen();
 
-	if ($CONFIG{'f'} && $seen) {
-		verbose("Already tweeted picture '$CODE' with caption '$CAPTION'.");
+	if ($CONFIG{'f'} && $SEEN) {
+		verbose("Already posted picture '$CODE' with caption '$CAPTION'.");
 		return;
 	}
 
-	my @cmd = ( "tweet", "-u", $CONFIG{'t'}, "-m", $TMPFILE );
 	binmode(STDOUT, ":utf8");
 	binmode(STDERR, ":utf8");
+
+	$CAPTION = normalize($CAPTION);
+	my @cmd = ( "tweet", "-u", $CONFIG{'t'}, "-m", $TMPFILE );
 	verbose("'$CAPTION $LINK' | " . join(" ", @cmd), 2);
 	open(PIPE, "|-", @cmd) || die "Unable to open pipe to 'tweet': $!\n";
 	binmode(PIPE, ":utf8");
@@ -360,7 +477,8 @@ sub usage($) {
 	my $FH = $err ? \*STDERR : \*STDOUT;
 
 	print $FH <<EOH
-Usage: $PROGNAME [-dhv] [-T tumblr] [-i instagram] -t twitter
+Usage: $PROGNAME [-dhv] [-M mastodon] [-T tumblr] [-i instagram] -t twitter
+         -M mastodon   post to this mastodon server as well
          -T tumblr     fetch photos from the 'tumblr' account
          -d            don't do anything, just show what would be done
 	 -h            print this help and exit
@@ -390,5 +508,9 @@ sub verbose($;$) {
 init();
 getLatestPic();
 tweetPic();
+
+if ($CONFIG{'m'} && !$SEEN) {
+	postToMastodon();
+}
 
 exit(0);
