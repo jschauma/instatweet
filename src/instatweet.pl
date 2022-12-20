@@ -1,4 +1,4 @@
-#! /usr/pkg/bin/perl -T
+#! /usr/local/bin/perl -T
 #
 # This tool fetches the latest image from the given
 # instagram account and posts it on twitter.
@@ -73,7 +73,7 @@ sub error($$) {
 sub getBearerToken() {
 	verbose("Getting bearer token...", 2);
 
-	my $bearerfile = $ENV{'HOME'} . "/.bearer";
+	my $bearerfile = $ENV{'HOME'} . "/.mstdn/" . $CONFIG{'t'};
 	my $fh;
 	open($fh, '<', $bearerfile) or die "Unable to open $bearerfile: $!\n";
 	$BEARER = <$fh>;
@@ -123,6 +123,7 @@ sub init() {
 	}
 
 	$ok = GetOptions(
+			 "caption|c=s"   => \$CONFIG{'c'},
 			 "dont|d"        => \$CONFIG{'d'},
 			 "file|f=s"      => \$CONFIG{'f'},
 			 "help|h"        => \$CONFIG{'h'},
@@ -390,27 +391,40 @@ sub tryPicuki() {
 
  	my $url = "https://www.picuki.com/profile/" . $CONFIG{'i'};
 
+	my $caption = 0;
 	foreach my $line (getContent($url)) {
-		if ($line =~ m|<a href="https://www.picuki.com/media/(.*)">|) {
+		if ($line =~ m|<a href="https://www.picuki.com/media/([^"]*)">|) {
 			my $media = $1;
 			$CODE = mediaToCode($media);
 			next;
 		}
 
-		if ($line =~ m/<img class="post-image" src="(.*)" alt="(.*)">/) {
+		if ($line =~ m/<img class="post-image" src="(.*)" alt="/) {
 			my $file = $1;
 
 			if ($file !~ m|^https:|) {
 				$file = "https://www.picuki.com/$1";
 			}
-			$CAPTION = $2;
 			if ($CODE) {
 				$LINK = "https://www.instagram.com/p/$CODE/";
+			} elsif ($CONFIG{'c'}) {
+				$LINK = $CONFIG{'c'};
 			} else {
-				$LINK = "https://www.instagram.com/newyorkercartoons/";
+				$LINK = "https://www.instagram.com/" . $CONFIG{'i'} . "/";
 			}
 			fetchMedia($file);
-			last;
+		}
+		if ($line =~ m/<div class="photo-description">/) {
+			$caption = 1;
+			next;
+		}
+		if ($caption) {
+			if ($line =~ m/<\/div>/) {
+				$caption = 0;
+				last;
+			}
+			$line =~ s/^\s*//;
+			$CAPTION .= "\n$line";
 		}
 	}
 
@@ -445,13 +459,6 @@ sub tweetPic() {
 
 	if (!$CAPTION) {
 		$CAPTION = "";
-	}
-
-	$SEEN = checkSeen();
-
-	if ($CONFIG{'f'} && $SEEN) {
-		verbose("Already posted picture '$CODE' with caption '$CAPTION'.");
-		return;
 	}
 
 	binmode(STDOUT, ":utf8");
@@ -507,10 +514,16 @@ sub verbose($;$) {
 
 init();
 getLatestPic();
-tweetPic();
 
-if ($CONFIG{'m'} && !$SEEN) {
-	postToMastodon();
+$SEEN = checkSeen();
+
+if (!$SEEN) {
+	tweetPic();
+	if ($CONFIG{'m'}) {
+		postToMastodon();
+	}
+} elsif ($CONFIG{'f'}) {
+	verbose("Already posted picture '$CODE' with caption '$CAPTION'.");
 }
 
 exit(0);

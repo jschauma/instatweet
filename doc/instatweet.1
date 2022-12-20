@@ -1,5 +1,5 @@
 .\"
-.Dd November 29, 2022
+.Dd December 19, 2022
 .Dt instatweet 1
 .Os
 .Sh NAME
@@ -8,6 +8,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl dhv
+.Op Fl c Ar caption
 .Op Fl M Ar mastodon
 .Op Fl T Ar tumblr
 .Fl f Ar seen
@@ -24,9 +25,13 @@ The following options are supported by
 .It Fl M Ar mastodon
 Also post to this Mastodon server.
 Note: this requires the authentication token for that
-server to be stored in the file ~/.bearer.
+server to be stored in the file
+~/.mstdn/<twitter-account>.
 .It Fl T Ar tumblr
 Fetch images from this tumblr blog.
+.It Fl c Ar caption
+Specify a caption instead of trying to derive it from
+Instagram.
 .It Fl d
 Don't do anything, just show what would be done.
 .It Fl f Ar seen

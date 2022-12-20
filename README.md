@@ -1,5 +1,62 @@
-instatweet(1)		     General Commands Manual		   instatweet(1)
+Summary
+=======
+Posting Instagram pictures to Twitter is a bit of a
+pain, since instagram links do not get a Twitter image
+card, requiring the user to follow the link.
 
+'instatweet' allows you to periodically poll an
+instagram account and have it post new images to a
+Twitter account.  That way, you can follow an
+instagram account without having to have or use an
+instagram account and without having to follow
+individual links.
+
+Since Instagram may require you to have a developer
+API account with Facebook and kick you back to a login
+screen, 'instatweet' will fall back to using
+picuki.net to grab the image.
+
+'instatweet' also supports pulling an image from
+Tumblr posts.
+
+In addition, 'instatweet' can also post images to a
+given Mastodon server; for that, the authenticating
+token needs to be stored in the file
+~/.mstdn/<twitter-user>.
+
+If the -f flag is given, then 'instatweet' will log
+the picture ID in the given file and only tweet images
+that are not included in that file.
+
+'instatweet' uses the tweet(1) command-line utility to
+post the picture.  This requires you to have set up
+tweet(1) for the given account prior to using
+'instatweet'.
+
+Please see the manual page for details.
+
+Example
+=======
+I have a crontab entry that cross-posts cartoons from
+the New Yorker Instagram account to a Twitter and
+Mastodon account I control:
+
+```
+30 */2 * * * instatweet -f /home/jschauma/.instatweet -i newyorkercartoons -t nycartoons -M mstdn.social
+```
+
+Requirements
+============
+[tweet](https://github.com/jschauma/tweet)
+
+Perl with
+* LWP::UserAgent
+* LWP::Protocol::https
+* JSON
+
+---
+
+```
 NAME
      instatweet	 tweet images from an instagram account
 
@@ -65,5 +122,4 @@ HISTORY
 
 BUGS
      Please submit bug reports and feature requests by emailing the author.
-
-NetBSD 9.3			December 19, 2022		      NetBSD 9.3
+```
