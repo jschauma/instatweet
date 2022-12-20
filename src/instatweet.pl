@@ -12,6 +12,7 @@ use File::Basename;
 use File::Temp;
 use Getopt::Long;
 Getopt::Long::Configure("bundling");
+use HTML::Entities;
 use JSON;
 use LWP::UserAgent;
 use LWP::Protocol::http;
@@ -61,6 +62,15 @@ sub checkSeen() {
 	my %all = map{ $_ => 1 } split(/\n/, $seen);
 
 	return $all{$CODE};
+}
+
+sub dehtmlify($) {
+	my ($line) = @_;
+
+	$line =~ s/<.+?>//g;
+	$line =~ s/^\s+//g;
+
+	return decode_entities($line);
 }
 
 sub error($$) {
@@ -424,7 +434,7 @@ sub tryPicuki() {
 				last;
 			}
 			$line =~ s/^\s*//;
-			$CAPTION .= "\n$line";
+			$CAPTION .= "\n" . dehtmlify($line);
 		}
 	}
 
