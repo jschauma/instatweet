@@ -199,6 +199,8 @@ sub fetchMedia($) {
 sub getContent($) {
 	my ($url) = @_;
 
+	verbose("Fetching $url...", 3);
+
 	$ENV{HTTPS_DEBUG} = 1;
 	my $ua = LWP::UserAgent->new();
 
@@ -287,6 +289,10 @@ sub postToMastodon() {
 	my $server = $CONFIG{'m'};
 
 	verbose("Posting to Mastodon server $server ...");
+
+	if ($CONFIG{'d'}) {
+		return;
+	}
 	getBearerToken();
 
 	verbose("Posting media...", 2);
@@ -402,46 +408,50 @@ sub tryPicuki() {
  	my $url = "https://www.picuki.com/profile/" . $CONFIG{'i'};
 
 	my $caption = 0;
+	my $picurl = "";
 	foreach my $line (getContent($url)) {
 		if ($line =~ m|<a href="https://www.picuki.com/media/([^"]*)">|) {
 			my $media = $1;
 			$CODE = mediaToCode($media);
-			next;
+			$picurl = "https://www.picuki.com/media/$media";
+			last;
 		}
+	}
 
-		if ($line =~ m/<img class="post-image" src="(.*)" alt="/) {
-			my $file = $1;
+	if ($picurl) {
+		foreach my $line (getContent($picurl)) {
+			if ($line =~ m/<div class="single-photo-description">(.*)/) {
+				$caption = 1;
+				$CAPTION = dehtmlify($1);
+			       	if ($line =~ m/<\/div>/) {
+					$caption = 0;
+				}
+			}
+			if ($caption) {
+			       	if ($line =~ m/<\/div>/) {
+					$CAPTION .= dehtmlify($line);
+					$caption = 0;
+				}
+			}
+			if ($line =~ m/<div class="download_button" data-url="([^"]+)"/) {
+				my $file = $1;
 
-			if ($file !~ m|^https:|) {
-				$file = "https://www.picuki.com/$1";
-			}
-			if ($CODE) {
-				$LINK = "https://www.instagram.com/p/$CODE/";
-			} elsif ($CONFIG{'c'}) {
-				$LINK = $CONFIG{'c'};
-			} else {
-				$LINK = "https://www.instagram.com/" . $CONFIG{'i'} . "/";
-			}
-			fetchMedia($file);
-		}
-		if ($line =~ m/<div class="photo-description">/) {
-			$caption = 1;
-			next;
-		}
-		if ($caption) {
-			if ($line =~ m/<\/div>/) {
-				$caption = 0;
+				if ($CODE) {
+					$LINK = "https://www.instagram.com/p/$CODE/";
+				} elsif ($CONFIG{'c'}) {
+					$LINK = $CONFIG{'c'};
+				} else {
+					$LINK = "https://www.instagram.com/" . $CONFIG{'i'} . "/";
+				}
+				fetchMedia($file);
 				last;
 			}
-			$line =~ s/^\s*//;
-			$CAPTION .= "\n" . dehtmlify($line);
 		}
 	}
 
 	if (!$CODE && $TMPFILE) {
 		getMD5();
 	}
-
 }
 
 sub tryTumblr() {
@@ -471,16 +481,20 @@ sub tweetPic() {
 		$CAPTION = "";
 	}
 
-	binmode(STDOUT, ":utf8");
-	binmode(STDERR, ":utf8");
+#	binmode(STDOUT, ":utf8");
+#	binmode(STDERR, ":utf8");
 
 	$CAPTION = normalize($CAPTION);
 	my @cmd = ( "tweet", "-u", $CONFIG{'t'}, "-m", $TMPFILE );
+
 	verbose("'$CAPTION $LINK' | " . join(" ", @cmd), 2);
-	open(PIPE, "|-", @cmd) || die "Unable to open pipe to 'tweet': $!\n";
-	binmode(PIPE, ":utf8");
-	print PIPE "$CAPTION $LINK";
-	close(PIPE);
+
+	if (!$CONFIG{'d'}) {
+		open(PIPE, "|-", @cmd) || die "Unable to open pipe to 'tweet': $!\n";
+#		binmode(PIPE, ":utf8");
+		print PIPE "$CAPTION $LINK";
+		close(PIPE);
+	}
 
 	if ($CONFIG{'f'}) {
 		my $cmd = "echo '$CODE' >> " . $CONFIG{'f'};
