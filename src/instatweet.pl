@@ -83,7 +83,7 @@ sub error($$) {
 sub getBearerToken() {
 	verbose("Getting bearer token...", 2);
 
-	my $bearerfile = $ENV{'HOME'} . "/.mstdn/" . $CONFIG{'t'};
+	my $bearerfile = $ENV{'HOME'} . "/.mstdn/" . $CONFIG{'m'};
 	my $fh;
 	open($fh, '<', $bearerfile) or die "Unable to open $bearerfile: $!\n";
 	$BEARER = <$fh>;
@@ -138,7 +138,8 @@ sub init() {
 			 "file|f=s"      => \$CONFIG{'f'},
 			 "help|h"        => \$CONFIG{'h'},
 			 "instagram|i=s" => \$CONFIG{'i'},
-			 "mastodon|M=s"  => \$CONFIG{'m'},
+			 "mastodon-instance|M=s"  => \$CONFIG{'M'},
+			 "mastodon|m=s"  => \$CONFIG{'m'},
 			 "tumblr|T=s"    => \$CONFIG{'T'},
 			 "twitter|t=s"   => \$CONFIG{'t'},
 			 "verbose|v+"    => sub { $CONFIG{'v'}++; },
@@ -155,8 +156,8 @@ sub init() {
 		# NOTREACHED
 	}
 
-	if (!($CONFIG{'i'} || $CONFIG{'T'})|| !$CONFIG{'t'}) {
-		error("Please specify both '-t' and either '-i' or '-T'.", EXIT_FAILURE);
+	if (!($CONFIG{'i'} || $CONFIG{'T'}) || (!($CONFIG{'m'}) || $CONFIG{'t'})) {
+		error("Please specify both '-i' and either '-m', '-t', or '-T'.", EXIT_FAILURE);
 		# NOTREACHED
 	}
 
@@ -286,7 +287,12 @@ sub normalize($) {
 }
 
 sub postToMastodon() {
-	my $server = $CONFIG{'m'};
+	my $server = $CONFIG{'M'};
+
+	if ($CONFIG{'f'} && $SEEN) {
+		verbose("Already posted picture '$CODE' with caption '$CAPTION'.");
+		return;
+	}
 
 	verbose("Posting to Mastodon server $server ...");
 
@@ -316,6 +322,10 @@ sub postToMastodon() {
 					]);
 	$id = getIdFromJson($r);
 	verbose("Mastodon status $id posted.", 3);
+	if ($CONFIG{'f'}) {
+		my $cmd = "echo '$CODE' >> " . $CONFIG{'f'};
+		runCommand($cmd);
+	}
 }
 
 sub runCommand($) {
@@ -542,7 +552,9 @@ getLatestPic();
 $SEEN = checkSeen();
 
 if (!$SEEN) {
-	tweetPic();
+	if ($CONFIG{'t'}) {
+		tweetPic();
+	}
 	if ($CONFIG{'m'}) {
 		postToMastodon();
 	}
